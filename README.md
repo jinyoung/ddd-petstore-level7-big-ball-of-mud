@@ -26,13 +26,13 @@ mvn spring-boot:run
 
 ```
 # 회원등록
-http localhost:8080/customers id="park@naver.com" address[zipcode]="123" address[detail]="용인"
+http localhost:8085/customers id="park@naver.com" address[zipcode]="123" address[detail]="용인"
 
 # 카트에 뽀삐담기
-http :8080/cartItems customer="http://localhost:8083/customers/park@naver.com" items[]="http://localhost:8080/pets/1"
+http :8085/cartItems customer="http://localhost:8083/customers/park@naver.com" items[]="http://localhost:8080/pets/1"
 
 # 카트에 담긴 뽀삐확인
-http "http://localhost:8080/cartItems/2/items"
+http "http://localhost:8085/cartItems/2/items"
 ```
 
 ## 문제
@@ -44,10 +44,10 @@ http "http://localhost:8080/cartItems/2/items"
 - Cat 과 Dog 를 따로 등록할 수 있도록 CatRepository.java 와 DogRepository.java 를 만들었음
 - 따라서 다음과 같이 Cat 과 Dog 를 http 로 등록할 수 있음:
 ```
-http :8080/cats name="몽이" price[currency]="KR_WON" price[amount]=100000
-http :8080/dogs name="춘삼이" price[currency]="EURO" price[amount]=200000
+http :8085/cats name="몽이" price[currency]="KR_WON" price[amount]=100000
+http :8085/dogs name="춘삼이" price[currency]="EURO" price[amount]=200000
 
-http :8080/cartItems customer="http://localhost:8083/customers/park@naver.com" items:='["http://localhost:8080/cats/4", "http://localhost:8080/dogs/5"]'
+http :8085/cartItems customer="http://localhost:8083/customers/park@naver.com" items:='["http://localhost:8080/cats/19", "http://localhost:8080/dogs/20"]'
 
 ```
 
@@ -59,7 +59,78 @@ http :8080/cartItems customer="http://localhost:8083/customers/park@naver.com" i
 
 
 
-# Debezium
+# Debezium + KSQLDB (Docker-compose Easyway)
+
+```
+docker-compose up
+docker exec -it ddd-petstore-level7-big-ball-of-mud-mysql-1 bin/bash
+
+mysql -uroot -pdebezium
+
+create database petstore;
+```
+
+
+Check whether the kafka-connect service which plays the core role is working properly:
+```
+docker logs ddd-petstore-level7-big-ball-of-mud-kafka-connect-1 -f
+
+# You can see as follows if the service is properly up:
+2024-06-10 06:25:14,031 INFO   ||  [Worker clientId=connect-1, groupId=1] Session key updated   [org.apache.kafka.connect.runtime.distributed.DistributedHerder]
+
+```
+
+Attach to the KSQL DB CLI:
+
+```
+docker exec -it ksqldb-cli ksql http://primary-ksqldb-server:8088
+```
+
+
+CREATE Stream:
+
+```
+CREATE STREAM cdc_stream (id VARCHAR KEY, order_id INT, txid VARCHAR, amount DECIMAL(12, 2)) 
+   WITH (KAFKA_TOPIC='dbserver1.all_tables', VALUE_FORMAT='json');
+
+CREATE STREAM cdc_stream2 (id VARCHAR KEY, payload VARCHAR, schema VARCHAR) 
+   WITH (KAFKA_TOPIC='dbserver1.all_tables', VALUE_FORMAT='json');
+
+
+CREATE TABLE parsed_stream2 AS
+   SELECT 'constant' AS group_key,
+
+          COLLECT_LIST(CONCAT('schema:', schema, 'payload:', payload))
+ FROM cdc_stream2
+ WINDOW TUMBLING (SIZE 2 SECONDS)
+ GROUP BY 'constant'
+ ;
+
+CREATE TABLE parsed_stream AS
+   SELECT 'constant' AS group_key,
+          COLLECT_LIST(EXTRACTJSONFIELD(id, '$.payload.__dbz__physicalTableIdentifier')) AS table_names,
+          COLLECT_LIST(EXTRACTJSONFIELD(id, '$.payload')) AS data,
+          COLLECT_LIST(EXTRACTJSONFIELD(id, '$.txid')) AS tx_ids
+ FROM cdc_stream
+ WINDOW TUMBLING (SIZE 2 SECONDS)
+ GROUP BY 'constant'
+ ;
+```
+
+Watch the stream:
+```
+select data from parsed_stream EMIT CHANGES;
+```
+
+Make an order:
+```
+http localhost:8085/customers id="park@naver.com" address[zipcode]="123" address[detail]="용인"
+
+http PUT :8085/pet-order userId:"park@naver.com" orderItems[0][productId]='TV' orderItems[0][qty]=5 orderItems[1][productId]='Phone' orderItems[1][qty]=2
+
+```
+
+# Debezium (Complex way)
 
 ## 
 ```
@@ -73,7 +144,13 @@ docker run -it --rm --name mysqlterm --link mysql mysql:8.2 sh -c 'exec mysql -h
 
 docker run -it --rm --name connect -p 8083:8083 -e GROUP_ID=1 -e CONFIG_STORAGE_TOPIC=my_connect_configs -e OFFSET_STORAGE_TOPIC=my_connect_offsets -e STATUS_STORAGE_TOPIC=my_connect_statuses --link kafka:kafka --link mysql:mysql quay.io/debezium/connect:2.5
 
-curl -i -X POST -H "Accept:application/json" -H "Content-Type:application/json" localhost:8083/connectors/ -d '{ "name": "petstore-connector", "config": { "connector.class": "io.debezium.connector.mysql.MySqlConnector", "tasks.max": "1", "database.hostname": "mysql", "database.port": "3306", "database.user": "debezium", "database.password": "dbz", "database.server.id": "184054", "topic.prefix": "dbserver1", "database.include.list": "petstore", "schema.history.internal.kafka.bootstrap.servers": "kafka:9092", "schema.history.internal.kafka.topic": "schemahistory.petstore" } }'
+curl -i -X POST -H "Accept:application/json" -H "Content-Type:application/json" localhost:8083/connectors/ -d '{ "name": "petstore-connector", "config": { "connector.class": "io.debezium.connector.mysql.MySqlConnector", "tasks.max": "1", "database.hostname": "mysql", "database.port": "3306", "database.user": "debezium", "database.password": "dbz", "database.server.id": "184054", "topic.prefix": "dbserver1", "database.include.list": "petstore", "schema.history.internal.kafka.bootstrap.servers": "kafka:9092", "schema.history.internal.kafka.topic": "schemahistory.petstore" }}'
+
+curl -i -X POST -H "Accept:application/json" -H "Content-Type:application/json" localhost:8083/connectors/ -d '{ "name": "petstore-connector-all-tables", "config": { "connector.class": "io.debezium.connector.mysql.MySqlConnector", "tasks.max": "1", "database.hostname": "mysql", "database.port": "3306", "database.user": "debezium", "database.password": "dbz", "database.server.id": "184054", "topic.prefix": "dbserver1", "database.include.list": "petstore", "schema.history.internal.kafka.bootstrap.servers": "kafka:9092", "schema.history.internal.kafka.topic": "schemahistory.petstore", "transforms": "unwrap,route", "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState", "transforms.route.type": "io.debezium.transforms.ByLogicalTableRouter", "transforms.route.topic.regex": ".*", "transforms.route.topic.replacement": "dbserver1.all_tables"  }}'
+
+
+curl -i -X POST -H "Accept:application/json" -H "Content-Type:application/json" localhost:8083/connectors/ -d '{ "name": "petstore-connector-all-tables-original2", "config": { "connector.class": "io.debezium.connector.mysql.MySqlConnector", "tasks.max": "1", "database.hostname": "mysql", "database.port": "3306", "database.user": "debezium", "database.password": "dbz", "database.server.id": "184054", "topic.prefix": "dbserver1", "database.include.list": "petstore", "schema.history.internal.kafka.bootstrap.servers": "kafka:9092", "schema.history.internal.kafka.topic": "schemahistory.petstore", "transforms": "route", "transforms.route.type": "io.debezium.transforms.ByLogicalTableRouter", "transforms.route.topic.regex": ".*", "transforms.route.topic.replacement": "dbserver1.all_tables.original"  }}'
+
 
 docker run -it --rm --name watcher --link zookeeper:zookeeper --link kafka:kafka quay.io/debezium/kafka:2.5 watch-topic -a -k dbserver1.petstore.pet
 ```
