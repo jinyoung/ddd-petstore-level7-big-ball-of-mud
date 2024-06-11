@@ -95,7 +95,7 @@ services:
       MYSQL_PASSWORD: mysqlpw
 
 
-  mysql-client:
+  mysql-init:
     image: mysql:5.7
     depends_on:
       - mysql
