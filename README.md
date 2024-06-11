@@ -81,6 +81,16 @@ docker logs ddd-petstore-level7-big-ball-of-mud-kafka-connect-1 -f
 
 ```
 
+
+Attach to the Kafka log:
+
+```
+docker exec -it ddd-petstore-level7-big-ball-of-mud-kafka-1 bash
+
+cd /bin
+./kafka-console-consumer --bootstrap-server localhost:9092 --from-beginning --topic dbserver1.all_tables.original
+```
+
 Attach to the KSQL DB CLI:
 
 ```
