@@ -63,6 +63,7 @@ http :8085/cartItems customer="http://localhost:8083/customers/park@naver.com" i
 
 ```
 docker-compose up
+
 docker exec -it ddd-petstore-level7-big-ball-of-mud-mysql-1 bin/bash
 
 mysql -uroot -pdebezium
@@ -126,7 +127,7 @@ Make an order:
 ```
 http localhost:8085/customers id="park@naver.com" address[zipcode]="123" address[detail]="용인"
 
-http PUT :8085/pet-order userId:"park@naver.com" orderItems[0][productId]='TV' orderItems[0][qty]=5 orderItems[1][productId]='Phone' orderItems[1][qty]=2
+http PUT :8085/pet-order userId:"park@naver.com" orderItems[0][productId]='TV' orderItems[0][qty]=5 orderItems[0][price]=5000 orderItems[1][productId]='Phone' orderItems[1][qty]=2 orderItems[1][price]=1000 
 
 ```
 

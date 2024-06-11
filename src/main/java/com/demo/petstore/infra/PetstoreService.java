@@ -36,10 +36,19 @@ public class PetstoreService {
         customerRepository.findById(userId).ifPresentOrElse(customer->{
             order.setCustomer(customer);
             orderRepository.save(order);
-            
 
+            // Calculate the total amount of the order
+            double totalAmount = order.getOrderItems().stream()
+            .mapToDouble(item -> item.getPrice() * item.getQty())
+            .sum();
+
+            // Calculate 1% of the total amount for mileage
+            double mileagePoints = totalAmount * 0.01;
+
+            // Set the mileage points
             Mileage mileage = new Mileage();
             mileage.setCustomer(order.getCustomer());
+            mileage.setAmount(mileagePoints);
             mileageRepository.save(mileage);
     
         
